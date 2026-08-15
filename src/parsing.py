@@ -158,6 +158,17 @@ def detect_school_year(text: str) -> str | None:
     return f"{m.group(1)}-{m.group(2)}" if m else None
 
 
+def default_ktp_school_year(today: datetime.date | None = None) -> str:
+    """Дефолт учебного года для КТП — не то же самое, что 'текущий учебный год
+    по календарю' (detect_academic_year): с июня по август учитель обычно уже
+    готовит план на СЛЕДУЮЩИЙ учебный год (который начнётся в сентябре этого
+    же года), а не отчитывается за только что завершившийся. Поэтому с июня
+    порог сдвинут раньше сентября."""
+    today = today or datetime.date.today()
+    start_year = today.year if today.month >= 6 else today.year - 1
+    return f"{start_year}-{start_year + 1}"
+
+
 def detect_start_date(text: str) -> str | None:
     """Явно указанная дата начала занятий по предмету ('с 02.09', '02.09.2026')
     в свободном тексте при генерации КТП. В отличие от detect_date здесь нет

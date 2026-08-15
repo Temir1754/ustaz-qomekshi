@@ -193,7 +193,7 @@ def _bold(cell) -> None:
 
 def _header_cell(cell, text: str, size: int = 11) -> None:
     """Заголовок таблицы (шапка колонок) — Times New Roman, жирный, size пт
-    (по умолчанию 11) — отдельно от общего шрифта документа (12 пт)."""
+    (по умолчанию 11), без заливки — отдельно от общего шрифта документа (12 пт)."""
     cell.text = text
     for p in cell.paragraphs:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -201,7 +201,6 @@ def _header_cell(cell, text: str, size: int = 11) -> None:
             r.bold = True
             r.font.name = "Times New Roman"
             r.font.size = Pt(size)
-    _shade(cell)
 
 
 def _shade(cell, hex_color: str = "D9E2F3") -> None:

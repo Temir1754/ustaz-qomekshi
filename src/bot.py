@@ -60,6 +60,7 @@ from parsing import (
     detect_academic_year,
     detect_school_year,
     detect_start_date,
+    default_ktp_school_year,
 )
 from i18n import t, btn_variants, LANG_NAMES, DEFAULT_LANG
 from docx_export import build_ktp_docx, build_ksp_docx, resolve_ksp_content, lesson_weekdays
@@ -253,6 +254,7 @@ class KSPFlow(StatesGroup):
 
 class KTPFlow(StatesGroup):
     entering_params = State()
+    choosing_school_year = State()
     entering_textbook = State()
     choosing_weekdays = State()
 
@@ -1378,26 +1380,67 @@ async def ktp_generate(message: Message, state: FSMContext) -> None:
     subject_label = SUBJECT_LABELS[lang][subject_id] if subject_id else raw
     hours_per_week = detect_hours_per_week(raw)
     total_hours = hours_per_week * 34  # ~34 учебные недели в году
-
-    # Год и дату начала учитель может указать прямо в этом же сообщении
-    # («2026-2027», «с 02.09.2026») — если нет, дефолт: текущий учебный год
-    # по сегодняшней дате и 1 сентября этого года.
-    today_str = datetime.datetime.now().strftime("%d.%m.%Y")
-    school_year = detect_school_year(raw) or detect_academic_year(today_str)
+    # Дату начала учитель может указать прямо в этом же сообщении («с 02.09.2026»);
+    # учебный год спрашивается отдельным шагом ниже (ktpyear) — «текущий учебный
+    # год по календарю» не годится дефолтом: с июня по август педагог обычно
+    # готовит план уже на СЛЕДУЮЩИЙ год (см. default_ktp_school_year).
     start_date_str = detect_start_date(raw)
+
+    await state.update_data(
+        ktp_raw=raw, ktp_cls=cls, ktp_subject_label=subject_label,
+        ktp_hours_per_week=hours_per_week, ktp_total_hours=total_hours,
+        ktp_start_date_str=start_date_str,
+    )
+
+    school_year = detect_school_year(raw)
+    if school_year:
+        await _ktp_school_year_chosen(message, state, lang, school_year)
+        return
+
+    await state.set_state(KTPFlow.choosing_school_year)
+    await message.answer(t(lang, "ktpyear_prompt"), reply_markup=_school_year_kb(_school_year_candidates()))
+
+
+def _school_year_candidates() -> list[str]:
+    default = default_ktp_school_year()
+    start = int(default.split("-")[0])
+    return [default, f"{start + 1}-{start + 2}"]
+
+
+def _school_year_kb(candidates: list[str]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=y, callback_data=f"ktpyear:{y}")] for y in candidates])
+
+
+async def _ktp_school_year_chosen(message_target: Message, state: FSMContext, lang: str, school_year: str) -> None:
+    data = await state.get_data()
+    start_date_str = data.get("ktp_start_date_str")
     start_date = (
         datetime.datetime.strptime(start_date_str, "%d.%m.%Y").date()
         if start_date_str
         else datetime.date(int(school_year.split("-")[0]), 9, 1)
     )
-
-    await state.update_data(
-        ktp_raw=raw, ktp_cls=cls, ktp_subject_label=subject_label,
-        ktp_hours_per_week=hours_per_week, ktp_total_hours=total_hours,
-        ktp_school_year=school_year, ktp_start_date=start_date.isoformat(),
-    )
+    await state.update_data(ktp_school_year=school_year, ktp_start_date=start_date.isoformat())
     await state.set_state(KTPFlow.entering_textbook)
-    await message.answer(t(lang, "ktp_textbook_prompt"))
+    await message_target.answer(t(lang, "ktp_textbook_prompt"))
+
+
+@router.message(KTPFlow.choosing_school_year, ~F.text.in_(ALL_MENU_BUTTONS))
+async def ktp_school_year_text(message: Message, state: FSMContext) -> None:
+    lang = get_lang(message.from_user.id)
+    school_year = detect_school_year(message.text.strip())
+    if not school_year:
+        await message.answer(t(lang, "ktpyear_prompt"), reply_markup=_school_year_kb(_school_year_candidates()))
+        return
+    await _ktp_school_year_chosen(message, state, lang, school_year)
+
+
+@router.callback_query(KTPFlow.choosing_school_year, F.data.startswith("ktpyear:"))
+async def ktp_school_year_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    lang = get_lang(callback.from_user.id)
+    school_year = callback.data.split(":", 1)[1]
+    await callback.message.edit_text(t(lang, "ktpyear_chosen_label", year=school_year))
+    await callback.answer()
+    await _ktp_school_year_chosen(callback.message, state, lang, school_year)
 
 
 async def _ktp_finish_generate(
