@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Ustaz Qömekşi — Kundelik connector",
+  "description": "Подключает Telegram-бота Ustaz Qömekşi к вашей сессии Kundelik.kz. Пароль расширение никогда не видит — только читает cookie уже открытой сессии, после того как вы вошли на сайт сами.",
+  "version": "0.1.0",
+  "permissions": ["cookies"],
+  "host_permissions": [
+    "*://*.kundelik.kz/*",
+    "http://194.32.141.231:8092/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Ustaz Qömekşi — подключить Kundelik"
+  }
+}
